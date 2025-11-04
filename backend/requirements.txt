@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pandas
+pyyaml
+pydantic
+duckdb
+typer
+orjson
+numpy
+

@@ -1,0 +1,43 @@
+states_allowlist:
+  - CA
+  - TX
+  - FL
+  - NY
+  - AZ
+
+cap_threshold: 0.05
+
+budget:
+  max_cash: 60000
+
+loan:
+  rate: 0.065
+  term_years: 30
+  down_payment_pct: 0.20
+
+cash_costs:
+  closing_costs_pct: 0.03
+  inspection: 500
+  appraisal: 600
+  title_insurance: 1000
+
+assumptions:
+  vacancy_rate: 0.05
+  maintenance_pct: 0.10
+  property_management_pct: 0.08
+  insurance_pct: 0.015
+  capex_pct: 0.05
+
+scoring_weights:
+  cap_rate: 0.40
+  cash_on_cash: 0.30
+  dscr: 0.20
+  price: 0.10
+
+data_sources:
+  zips: "data/zips.csv"
+  baselines: "data/baselines.csv"
+  prices: "data/prices.csv"
+  rents: "data/rents.csv"
+  taxes: "data/taxes.csv"
+
