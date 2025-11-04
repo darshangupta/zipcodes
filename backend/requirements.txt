@@ -7,4 +7,5 @@ duckdb
 typer
 orjson
 numpy
+pyarrow
 

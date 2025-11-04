@@ -57,9 +57,15 @@ def run(
     
     typer.echo(f"Loading prices from {prices_path}...")
     prices = pd.read_csv(prices_path)
+    # Rename median_price to price if needed
+    if "median_price" in prices.columns:
+        prices = prices.rename(columns={"median_price": "price"})
     
     typer.echo(f"Loading rents from {rents_path}...")
     rents = pd.read_csv(rents_path)
+    # Rename median_rent to rent if needed
+    if "median_rent" in rents.columns:
+        rents = rents.rename(columns={"median_rent": "rent"})
     
     typer.echo(f"Loading taxes from {taxes_path}...")
     taxes = pd.read_csv(taxes_path)

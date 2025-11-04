@@ -1,11 +1,9 @@
 states_allowlist:
-  - CA
-  - TX
-  - FL
-  - NY
-  - AZ
+  - IN
+  - OH
+  - GA
 
-cap_threshold: 0.05
+cap_threshold: 0.075
 
 budget:
   max_cash: 60000
@@ -35,9 +33,9 @@ scoring_weights:
   price: 0.10
 
 data_sources:
-  zips: "data/zips.csv"
-  baselines: "data/baselines.csv"
-  prices: "data/prices.csv"
-  rents: "data/rents.csv"
-  taxes: "data/taxes.csv"
+  zips: "backend/data/csv/zips.csv"
+  baselines: "backend/data/csv/zips.csv"
+  prices: "backend/data/csv/zip_price.csv"
+  rents: "backend/data/csv/zip_rent.csv"
+  taxes: "backend/data/csv/zip_effective_tax.csv"
 
