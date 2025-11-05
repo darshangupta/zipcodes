@@ -18,6 +18,7 @@ dist/
 
 # Output files
 output/
+backend/out/
 *.parquet
 *.db
 *.duckdb

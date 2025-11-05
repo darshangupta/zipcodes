@@ -4,6 +4,7 @@ states_allowlist:
   - GA
 
 cap_threshold: 0.075
+min_dscr: 1.2
 
 budget:
   max_cash: 60000
@@ -18,6 +19,8 @@ cash_costs:
   inspection: 500
   appraisal: 600
   title_insurance: 1000
+  rehab: 0
+  reserves_months: 3
 
 assumptions:
   vacancy_rate: 0.05
@@ -31,6 +34,19 @@ scoring_weights:
   cash_on_cash: 0.30
   dscr: 0.20
   price: 0.10
+
+ingest:
+  redfin_zip: true
+  zori_zip: true
+  acs_zcta: true
+  county_tax: true
+  crime_county: true
+paths:
+  raw_redfin_zip_csv: "backend/raw/redfin_zip.csv"
+  raw_zori_zip_csv: "backend/raw/zori_zip.csv"
+  crosswalk_zip_county: "backend/cache/crosswalk_zip_county.parquet"
+  crosswalk_zip_zcta: "backend/cache/crosswalk_zip_zcta.parquet"
+  inventory_csv: "backend/data/inventory.csv"
 
 data_sources:
   zips: "backend/data/csv/zips.csv"

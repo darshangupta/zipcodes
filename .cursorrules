@@ -1,0 +1,86 @@
+# Cursor Rules for MFH ZIP Finder
+
+[goals]
+- Keep the pipeline deterministic and testable: ingest → cache → run → serve → UI.
+- Prefer small diffs, clear commits, and reversible changes.
+- Never break the CLI (`python -m backend.cli`) or API shape without explicit instruction.
+
+[boundaries]
+- Do NOT add external HTTP/API calls unless the prompt explicitly says so.
+- Do NOT remove or rename public endpoints:
+  - FastAPI: /api/meta, /api/zips, /api/export.csv
+  - CLI: `python -m backend.cli`, `python -m backend.cli deltas`, (later) `python -m backend.cli ingest`
+- Do NOT change config keys without updating README and all call sites.
+- Do NOT introduce new runtime deps without adding to `backend/requirements.txt`.
+- Do NOT commit secrets, API keys, or tokens.
+
+[files]
+- Backend code lives under `backend/`.
+- Providers live under `backend/providers/`.
+- Cached, normalized datasets go to `backend/cache/*.parquet`.
+- Legacy/mock CSVs live in `backend/data/csv/`.
+- Raw source files (for local ingest) live in `backend/raw/`.
+- Outputs go to `backend/out/` (parquet + duckdb).
+- Frontend lives under `frontend/`.
+
+[style]
+- Python: black-compatible formatting, type-friendly but no strict mypy gating.
+- Keep functions small; prefer pure functions for transforms.
+- Favor explicit column names over positional indexing in pandas.
+- Use `zip` as zero-padded strings (`.str.zfill(5)`).
+- Guard divisions (`np.maximum(denominator, 1)`) and log warnings for suspect ratios.
+
+[testing]
+- After backend changes, always run:
+  - `python -m backend.cli` (should complete and write `backend/out/target_zips.parquet`)
+  - `uvicorn backend.app:app --reload --port 8000` and GET `/api/zips`
+- For ingest changes, also run:
+  - `python -m backend.cli ingest --force`
+- If any dataset is missing, the run may *temporarily* fall back to legacy CSVs and log a warning.
+
+[logging]
+- Print a one-line summary per major step: rows in/out, exclusions by reason.
+- Warn if `median_rent/median_price > 0.03` or `< 0.002` (demo-number hint).
+- On ingest, print “cached: {name} rows={X} pulled_at={ISO8601}”.
+
+[config]
+- Keep these keys stable unless instructed:
+  - states_allowlist, cap_threshold, min_dscr, budget.max_cash
+  - loan.(ltv, rate_annual, term_years)
+  - cash_costs.(closing_cost_rate, rehab_rate, reserves_months)
+  - assumptions.(vacancy_rate, insurance_rate, repairs_rate, mgmt_rate)
+  - scoring_weights.(cap_rate, vacancy_inverse, rent_growth, landlord_score, tax_inverse, inventory, cash_on_cash, cash_need_inverse)
+  - data_sources.(zips, prices, rents, taxes, inventory)
+  - (ingest) flags + paths when added
+
+[cli-contract]
+- `python -m backend.cli`:
+  - loads config, baselines, signals
+  - computes caps & finance
+  - applies hard filters (cap_threshold, budget.max_cash, optional min_dscr)
+  - writes `backend/out/target_zips.parquet` and `backend/out/zipfinder.duckdb`
+  - saves snapshot `backend/out/run_YYYYMMDD.parquet`
+  - prints exclusions by reason
+- `python -m backend.cli deltas --since YYYY-MM-DD`:
+  - compares latest to snapshot and writes `backend/out/deltas.parquet`
+
+[api-contract]
+- `/api/meta`: returns run time and selected config knobs
+- `/api/zips`: supports filters (limit, state, min_cap, max_cash, min_dscr, min_coc), ordered by score desc
+- `/api/export.csv`: same filters, CSV download
+- Response rows include: zip, city, state, county, median_price, median_rent, eff_tax_rate, noi, cap_rate, cash_needed, dscr, cash_on_cash, inventory_hits, score, (optional) crime_index
+
+[ui]
+- Use shadcn components (button, input, select, card, badge).
+- Provide filters, a “Buy-box” card (Max Cash + ApproxPriceCap), and an Export button.
+- API base assumed `http://localhost:8000` unless overridden.
+
+[git]
+- Commit titles: imperative mood, scope prefix.
+  - e.g., `ingest: add redfin/zori providers`, `api: add export.csv`, `score: add reserves`
+- Keep diffs minimal and colocated with logical change.
+
+[future-placeholders]
+- Providers for Redfin/Zillow/ACS/Crime can start with local CSV→parquet “fetch” and be swapped to HTTP later.
+- Inventory hard filter is OFF until a real provider is wired.
+- Crime penalty is soft until a real index is wired.

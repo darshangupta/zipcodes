@@ -46,13 +46,15 @@ def attach_financing_constraints(
     """Attach financing constraints: cash_needed, dscr, cash_on_cash.
     
     Args:
-        df: DataFrame with columns: price, noi (annual)
+        df: DataFrame with columns: price, noi (annual), tax_expense, insurance_expense
         loan_params: Dict with rate, term_years, down_payment_pct
-        cash_costs: Dict with closing_costs_pct, inspection, appraisal, title_insurance
+        cash_costs: Dict with closing_costs_pct, inspection, appraisal, title_insurance,
+                   rehab, reserves_months
         budget: Dict with max_cash
         
     Returns:
-        DataFrame with added columns: cash_needed, dscr, cash_on_cash, monthly_payment
+        DataFrame with added columns: cash_needed, dscr, cash_on_cash, monthly_payment,
+        reserves, rehab_cost
     """
     df = df.copy()
     
@@ -65,6 +67,8 @@ def attach_financing_constraints(
     inspection = cash_costs.get("inspection", 500)
     appraisal = cash_costs.get("appraisal", 600)
     title_insurance = cash_costs.get("title_insurance", 1000)
+    rehab = cash_costs.get("rehab", 0)
+    reserves_months = cash_costs.get("reserves_months", 3)
     
     # Calculate loan amount
     df["loan_amount"] = df["price"] * (1 - down_payment_pct)
@@ -72,19 +76,44 @@ def attach_financing_constraints(
     # Calculate down payment
     df["down_payment"] = df["price"] * down_payment_pct
     
-    # Calculate monthly mortgage payment
+    # Calculate monthly mortgage payment (Principal + Interest)
     df["monthly_payment"] = df["loan_amount"].apply(
         lambda x: mortgage_payment(x, rate, term_years)
     )
     
+    # Calculate monthly tax and insurance (if available)
+    if "tax_expense" in df.columns:
+        monthly_tax = df["tax_expense"] / 12
+    else:
+        monthly_tax = pd.Series(0, index=df.index)
+    
+    if "insurance_expense" in df.columns:
+        monthly_insurance = df["insurance_expense"] / 12
+    else:
+        monthly_insurance = pd.Series(0, index=df.index)
+    
+    # PITI (Principal, Interest, Tax, Insurance)
+    df["monthly_piti"] = df["monthly_payment"] + monthly_tax + monthly_insurance
+    
+    # Calculate reserves = PITI × reserves_months
+    df["reserves"] = df["monthly_piti"] * reserves_months
+    
+    # Rehab cost (can be fixed or per-property)
+    if isinstance(rehab, (int, float)):
+        df["rehab_cost"] = rehab
+    else:
+        df["rehab_cost"] = 0
+    
     # Calculate annual debt service
     df["annual_debt_service"] = df["monthly_payment"] * 12
     
-    # Calculate cash needed (down payment + closing costs + other fees)
+    # Calculate cash needed = down + closing + rehab + reserves
     closing_costs = df["price"] * closing_costs_pct
     df["cash_needed"] = (
         df["down_payment"] +
         closing_costs +
+        df["rehab_cost"] +
+        df["reserves"] +
         inspection +
         appraisal +
         title_insurance
