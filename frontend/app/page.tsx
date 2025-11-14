@@ -11,6 +11,7 @@ interface ZipData {
   zip: string
   city: string
   state: string
+  county?: string
   score: number
   cap_rate: number
   cash_on_cash: number
@@ -131,8 +132,8 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-2 text-gray-900">Real Estate Zip Code Finder</h1>
-        <p className="text-gray-600 mb-8">Find investment opportunities by zip code</p>
+        <h1 className="text-3xl font-bold mb-2 text-gray-900">Real Estate ZIP Code Finder</h1>
+        <p className="text-gray-600 mb-8">Find investment opportunities by ZIP code</p>
 
         {/* Filters */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
@@ -270,21 +271,21 @@ export default function Home() {
                   </TableCell>
                 </TableRow>
               ) : (
-                zips.map((zip) => (
-                  <TableRow key={zip.zip}>
-                    <TableCell>{zip.score.toFixed(3)}</TableCell>
-                    <TableCell className="font-mono">{zip.zip}</TableCell>
-                    <TableCell>{zip.city}</TableCell>
-                    <TableCell>{zip.state}</TableCell>
-                    <TableCell>{(zip.cap_rate * 100).toFixed(2)}%</TableCell>
-                    <TableCell>{(zip.cash_on_cash * 100).toFixed(2)}%</TableCell>
-                    <TableCell>{zip.dscr.toFixed(2)}</TableCell>
-                    <TableCell>${zip.cash_needed.toLocaleString()}</TableCell>
-                    <TableCell>${zip.price.toLocaleString()}</TableCell>
-                    <TableCell>${zip.rent.toLocaleString()}</TableCell>
-                    <TableCell>{zip.eff_tax_rate ? (zip.eff_tax_rate * 100).toFixed(2) + '%' : 'N/A'}</TableCell>
-                    <TableCell>{zip.inventory_hits || 0}</TableCell>
-                    <TableCell>{zip.crime_index?.toFixed(2) || '1.00'}</TableCell>
+                zips.map((item) => (
+                  <TableRow key={item.zip}>
+                    <TableCell>{item.score.toFixed(3)}</TableCell>
+                    <TableCell className="font-mono">{item.zip}</TableCell>
+                    <TableCell>{item.city || 'N/A'}</TableCell>
+                    <TableCell>{item.state}</TableCell>
+                    <TableCell>{(item.cap_rate * 100).toFixed(2)}%</TableCell>
+                    <TableCell>{(item.cash_on_cash * 100).toFixed(2)}%</TableCell>
+                    <TableCell>{item.dscr.toFixed(2)}</TableCell>
+                    <TableCell>${item.cash_needed.toLocaleString()}</TableCell>
+                    <TableCell>${item.price.toLocaleString()}</TableCell>
+                    <TableCell>${item.rent.toLocaleString()}</TableCell>
+                    <TableCell>{item.eff_tax_rate ? (item.eff_tax_rate * 100).toFixed(2) + '%' : 'N/A'}</TableCell>
+                    <TableCell>{item.inventory_hits || 0}</TableCell>
+                    <TableCell>{item.crime_index?.toFixed(2) || '1.00'}</TableCell>
                   </TableRow>
                 ))
               )}

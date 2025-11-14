@@ -35,15 +35,22 @@ scoring_weights:
   dscr: 0.20
   price: 0.10
 
+geo_level: zip
+
 ingest:
-  redfin_zip: true
+  zhvi_zip: true
   zori_zip: true
+  zhvi_city: false
+  zori_city: false
   acs_zcta: true
   county_tax: true
   crime_county: true
 paths:
-  raw_redfin_zip_csv: "backend/raw/redfin_zip.csv"
+  raw_zhvi_zip_csv: "backend/raw/zhvi_zip.csv"
   raw_zori_zip_csv: "backend/raw/zori_zip.csv"
+  raw_zhvi_city_csv: "backend/raw/zhvi.csv"
+  raw_zori_city_csv: "backend/raw/zori.csv"
+  raw_county_tax_csv: "backend/raw/county_property_tax.csv"
   crosswalk_zip_county: "backend/cache/crosswalk_zip_county.parquet"
   crosswalk_zip_zcta: "backend/cache/crosswalk_zip_zcta.parquet"
   inventory_csv: "backend/data/inventory.csv"

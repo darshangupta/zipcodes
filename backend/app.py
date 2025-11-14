@@ -53,7 +53,7 @@ async def get_zips(
     min_dscr: Optional[float] = Query(None, description="Minimum DSCR"),
     min_coc: Optional[float] = Query(None, description="Minimum cash-on-cash return"),
 ):
-    """Query DuckDB zipview with filters."""
+    """Query DuckDB zipview with filters (returns ZIP-level data)."""
     db_path = Path("backend/out/zipfinder.duckdb")
     
     if not db_path.exists():

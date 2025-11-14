@@ -30,16 +30,17 @@ def load_signals(
     """Load and merge price, rent, and tax signals.
     
     Args:
-        prices: DataFrame with price data
-        rents: DataFrame with rent data
-        taxes: DataFrame with tax data
+        prices: DataFrame with price data (zip key)
+        rents: DataFrame with rent data (zip key)
+        taxes: DataFrame with tax data (zip key)
         
     Returns:
         Merged DataFrame with all signals
     """
-    # Merge on zip code (assuming all have 'zip' column)
+    # Merge on zip (assuming all have 'zip' column)
     merged = prices.merge(rents, on="zip", how="outer")
-    merged = merged.merge(taxes, on="zip", how="outer")
+    if taxes is not None and len(taxes) > 0:
+        merged = merged.merge(taxes, on="zip", how="outer")
     
     return merged
 

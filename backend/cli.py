@@ -49,32 +49,36 @@ def run(
     data_sources = config.get("data_sources", {})
     paths = config.get("paths", {})
     
-    # Load baselines (still from CSV for now)
+    # Load baselines (ZIP codes in allowed states)
     baselines_path = data_sources.get("baselines", "backend/data/csv/zips.csv")
     typer.echo(f"Loading baselines from {baselines_path}...")
-    baselines = pd.read_csv(baselines_path)
-    if "zip" in baselines.columns:
-        baselines["zip"] = baselines["zip"].astype(str).str.zfill(5)
+    if Path(baselines_path).exists():
+        baselines = pd.read_csv(baselines_path)
+        if "zip" in baselines.columns:
+            baselines["zip"] = baselines["zip"].astype(str).str.zfill(5)
+        # Filter by states
+        if "state" in baselines.columns:
+            baselines = baselines[baselines["state"].isin(states_allowlist)].copy()
+    else:
+        # If no baselines file, we'll create from price/rent data
+        baselines = pd.DataFrame(columns=["zip", "city", "state", "county"])
     
-    # Try to load prices from provider, fallback to legacy CSV
+    # Load prices from provider (ZIP-level)
     prices = None
     try:
-        from backend.providers.price_redfin import load
+        from backend.providers.price_zhvi import load
         typer.echo("Loading prices from provider cache...")
         prices = load()
         # Rename median_price to price for compatibility
         if "median_price" in prices.columns:
             prices = prices.rename(columns={"median_price": "price"})
+        # Filter by states_allowlist
+        if "state" in prices.columns:
+            prices = prices[prices["state"].isin(states_allowlist)].copy()
     except (FileNotFoundError, ImportError) as e:
-        prices_path = data_sources.get("prices", "backend/data/csv/zip_price.csv")
-        typer.echo(f"⚠️  Falling back to legacy CSV: {prices_path}")
-        prices = pd.read_csv(prices_path)
-        if "median_price" in prices.columns:
-            prices = prices.rename(columns={"median_price": "price"})
-        if "zip" in prices.columns:
-            prices["zip"] = prices["zip"].astype(str).str.zfill(5)
+        raise ValueError(f"Price data not available: provider cache missing. Run 'python -m backend.cli ingest' first.")
     
-    # Try to load rents from provider, fallback to legacy CSV
+    # Load rents from provider (ZIP-level)
     rents = None
     try:
         from backend.providers.rent_zori import load
@@ -83,73 +87,57 @@ def run(
         # Rename median_rent to rent for compatibility
         if "median_rent" in rents.columns:
             rents = rents.rename(columns={"median_rent": "rent"})
+        # Filter by states_allowlist
+        if "state" in rents.columns:
+            rents = rents[rents["state"].isin(states_allowlist)].copy()
     except (FileNotFoundError, ImportError) as e:
-        rents_path = data_sources.get("rents", "backend/data/csv/zip_rent.csv")
-        typer.echo(f"⚠️  Falling back to legacy CSV: {rents_path}")
-        rents = pd.read_csv(rents_path)
-        if "median_rent" in rents.columns:
-            rents = rents.rename(columns={"median_rent": "rent"})
-        if "zip" in rents.columns:
-            rents["zip"] = rents["zip"].astype(str).str.zfill(5)
+        raise ValueError(f"Rent data not available: provider cache missing. Run 'python -m backend.cli ingest' first.")
     
-    # Load geographic crosswalks
+    # Merge prices and rents on zip
+    typer.echo("Merging price and rent signals...")
+    signals = prices.merge(rents, on="zip", how="inner", suffixes=("", "_rent"))
+    
+    # Use state from prices if available, otherwise from rents
+    if "state" not in signals.columns and "state_rent" in signals.columns:
+        signals["state"] = signals["state_rent"]
+    if "state_rent" in signals.columns:
+        signals = signals.drop(columns=["state_rent"])
+    
+    # Start with baselines or signals (if no baselines, use signals as starting point)
+    if len(baselines) > 0:
+        df = baselines.merge(signals, on="zip", how="inner")
+    else:
+        df = signals.copy()
+        # Add placeholder city/county if missing
+        if "city" not in df.columns:
+            df["city"] = ""
+        if "county" not in df.columns:
+            df["county"] = ""
+    
+    # Load geographic crosswalks for tax mapping
     typer.echo("Loading geographic crosswalks...")
-    from backend.providers.geo import load_zip_county, load_zip_zcta
+    from backend.providers.geo import load_zip_county
     zip_county = load_zip_county(paths.get("crosswalk_zip_county", "backend/cache/crosswalk_zip_county.parquet"))
-    zip_zcta = load_zip_zcta(paths.get("crosswalk_zip_zcta", "backend/cache/crosswalk_zip_zcta.parquet"))
     
-    # Load county tax data
+    # Load county tax data and join via ZIP→county
     taxes = None
     try:
         from backend.providers.tax_model import load
         typer.echo("Loading tax data from provider cache...")
         county_tax = load()
-        if len(county_tax) > 0 and len(zip_county) > 0:
-            # Join ZIP→county→tax
-            taxes = zip_county.merge(county_tax, on="county_fips", how="left")
-            taxes = taxes[["zip", "eff_tax_rate"]].copy()
-            taxes["eff_tax_rate"] = taxes["eff_tax_rate"].fillna(0.015)  # Default tax rate
+        if len(county_tax) > 0:
+            # Use state average tax rate (ZIP→county crosswalk not yet fully implemented)
+            state_tax = county_tax.groupby("state")["eff_tax_rate"].mean().reset_index()
+            df = df.merge(state_tax, on="state", how="left")
+            df["eff_tax_rate"] = df["eff_tax_rate"].fillna(0.015)
         else:
-            taxes = pd.DataFrame(columns=["zip", "eff_tax_rate"])
+            df["eff_tax_rate"] = 0.015
     except Exception as e:
-        taxes_path = data_sources.get("taxes", "backend/data/csv/zip_effective_tax.csv")
-        typer.echo(f"⚠️  Falling back to legacy CSV: {taxes_path}")
-        taxes = pd.read_csv(taxes_path)
-        if "zip" in taxes.columns:
-            taxes["zip"] = taxes["zip"].astype(str).str.zfill(5)
-    
-    # Optional: Load ACS data and join via ZCTA
-    try:
-        from backend.providers.census_acs import load
-        acs_data = load()
-        if len(acs_data) > 0 and len(zip_zcta) > 0:
-            # This could be used to enrich vacancy_rate assumptions later
-            pass
-    except Exception:
-        pass  # ACS is optional
-    
-    # Load baselines filtered by states
-    typer.echo(f"Filtering baselines by states: {states_allowlist}...")
-    filtered_baselines = load_baselines(baselines, states_allowlist)
-    
-    # Load and merge signals
-    typer.echo("Merging price, rent, and tax signals...")
-    # Use load_signals helper, but ensure all DataFrames have zip column
-    if prices is not None and "zip" not in prices.columns:
-        raise ValueError("Prices DataFrame missing 'zip' column")
-    if rents is not None and "zip" not in rents.columns:
-        raise ValueError("Rents DataFrame missing 'zip' column")
-    if taxes is not None and "zip" not in taxes.columns:
-        raise ValueError("Taxes DataFrame missing 'zip' column")
-    
-    signals = load_signals(prices, rents, taxes)
-    
-    # Merge baselines with signals
-    # Assuming both have 'zip' column for merging
-    df = filtered_baselines.merge(signals, on="zip", how="inner")
+        typer.echo(f"⚠️  Warning: Could not load tax data: {e}")
+        df["eff_tax_rate"] = 0.015
     
     # Schema validation: ensure required columns exist
-    required_cols = ["price", "rent"]
+    required_cols = ["price", "rent", "zip"]
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns after merge: {missing}. Available: {df.columns.tolist()}")
@@ -158,7 +146,7 @@ def run(
         typer.echo("⚠️  Warning: eff_tax_rate not found, defaulting to 0.015")
         df["eff_tax_rate"] = 0.015
     
-    # Load inventory and crime data
+    # Load inventory and crime data (ZIP-level)
     typer.echo("Loading inventory data...")
     inventory = load_inventory()
     if len(inventory) > 0:
@@ -254,7 +242,7 @@ def run(
     typer.echo(f"Writing DuckDB to {db_path}...")
     write_duckdb(df_filtered, str(db_path), "zipview")
     
-    typer.echo(f"\n✅ Analysis complete! Found {len(df_filtered)} target zip codes.")
+    typer.echo(f"\n✅ Analysis complete! Found {len(df_filtered)} target ZIPs.")
 
 
 @app.command()
@@ -276,27 +264,52 @@ def ingest(
     typer.echo("Starting data ingest...")
     report = {}
     
-    # Redfin price data
-    if ingest_config.get("redfin_zip", False):
-        try:
-            from backend.providers.price_redfin import fetch
-            raw_path = paths.get("raw_redfin_zip_csv", "backend/raw/redfin_zip.csv")
-            df = fetch(force=force, raw_csv_path=raw_path)
-            report["redfin_zip"] = len(df)
-        except Exception as e:
-            typer.echo(f"⚠️  Redfin ingest failed: {e}")
-            report["redfin_zip"] = 0
+    # Get states_allowlist for filtering
+    states_allowlist = config.get("states_allowlist", [])
     
-    # ZORI rent data
+    # ZHVI ZIP price data
+    if ingest_config.get("zhvi_zip", False):
+        try:
+            from backend.providers.price_zhvi import fetch
+            raw_path = paths.get("raw_zhvi_zip_csv", "backend/raw/zhvi_zip.csv")
+            df = fetch(force=force, raw_csv_path=raw_path, states_allowlist=states_allowlist)
+            report["zhvi_zip"] = len(df)
+        except Exception as e:
+            typer.echo(f"⚠️  ZHVI ZIP ingest failed: {e}")
+            report["zhvi_zip"] = 0
+    
+    # ZORI ZIP rent data
     if ingest_config.get("zori_zip", False):
         try:
             from backend.providers.rent_zori import fetch
             raw_path = paths.get("raw_zori_zip_csv", "backend/raw/zori_zip.csv")
-            df = fetch(force=force, raw_csv_path=raw_path)
+            df = fetch(force=force, raw_csv_path=raw_path, states_allowlist=states_allowlist)
             report["zori_zip"] = len(df)
         except Exception as e:
-            typer.echo(f"⚠️  ZORI ingest failed: {e}")
+            typer.echo(f"⚠️  ZORI ZIP ingest failed: {e}")
             report["zori_zip"] = 0
+    
+    # ZHVI city price data (optional, for city-level analysis)
+    if ingest_config.get("zhvi_city", False):
+        try:
+            from backend.providers.price_zhvi import fetch
+            raw_path = paths.get("raw_zhvi_city_csv", "backend/raw/zhvi.csv")
+            df = fetch(force=force, raw_csv_path=raw_path)
+            report["zhvi_city"] = len(df)
+        except Exception as e:
+            typer.echo(f"⚠️  ZHVI city ingest failed: {e}")
+            report["zhvi_city"] = 0
+    
+    # ZORI city rent data (optional, for city-level analysis)
+    if ingest_config.get("zori_city", False):
+        try:
+            from backend.providers.rent_zori import fetch
+            raw_path = paths.get("raw_zori_city_csv", "backend/raw/zori.csv")
+            df = fetch(force=force, raw_csv_path=raw_path)
+            report["zori_city"] = len(df)
+        except Exception as e:
+            typer.echo(f"⚠️  ZORI city ingest failed: {e}")
+            report["zori_city"] = 0
     
     # Census ACS data
     if ingest_config.get("acs_zcta", False):
@@ -309,11 +322,12 @@ def ingest(
             typer.echo(f"⚠️  ACS ingest failed: {e}")
             report["acs_zcta"] = 0
     
-    # County tax data (no-op fetch, just ensures cache exists)
+    # County tax data
     if ingest_config.get("county_tax", False):
         try:
             from backend.providers.tax_model import fetch
-            df = fetch(force=force)
+            raw_path = paths.get("raw_county_tax_csv", "backend/raw/county_property_tax.csv")
+            df = fetch(force=force, raw_csv_path=raw_path)
             report["county_tax"] = len(df) if df is not None else 0
         except Exception as e:
             typer.echo(f"⚠️  County tax ingest failed: {e}")
