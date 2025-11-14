@@ -205,42 +205,46 @@ def run(
     typer.echo(f"  Excluded (dscr < {min_dscr}): {excluded_dscr}")
     typer.echo(f"  ✅ Passing all filters: {len(df_filtered)}")
     
-    # Score the results
-    typer.echo("Computing scores...")
-    df_filtered["score"] = (
-        df_filtered["cap_rate"] * scoring_weights.get("cap_rate", 0.40) +
-        df_filtered["cash_on_cash"] * scoring_weights.get("cash_on_cash", 0.30) +
-        df_filtered["dscr"] * scoring_weights.get("dscr", 0.20) +
-        (1 / df_filtered["price"]) * scoring_weights.get("price", 0.10) * 1000000  # Normalize price
+    # Score ALL ZIPs (not just filtered) so API can show them with different filters
+    typer.echo("Computing scores for all ZIPs...")
+    df["score"] = (
+        df["cap_rate"] * scoring_weights.get("cap_rate", 0.40) +
+        df["cash_on_cash"] * scoring_weights.get("cash_on_cash", 0.30) +
+        df["dscr"] * scoring_weights.get("dscr", 0.20) +
+        (1 / df["price"]) * scoring_weights.get("price", 0.10) * 1000000  # Normalize price
     )
     
     # Apply soft crime penalty: score *= 0.95 if crime_index > 1.25
-    if "crime_index" in df_filtered.columns:
-        crime_penalty_mask = df_filtered["crime_index"] > 1.25
-        df_filtered.loc[crime_penalty_mask, "score"] = df_filtered.loc[crime_penalty_mask, "score"] * 0.95
+    if "crime_index" in df.columns:
+        crime_penalty_mask = df["crime_index"] > 1.25
+        df.loc[crime_penalty_mask, "score"] = df.loc[crime_penalty_mask, "score"] * 0.95
     
     # Sort by score descending
+    df = df.sort_values("score", ascending=False)
+    
+    # Score filtered results too (they're a subset of df, so copy scores)
+    df_filtered["score"] = df.loc[df_filtered.index, "score"].values
     df_filtered = df_filtered.sort_values("score", ascending=False)
     
     # Create output directories (backend/out per cursorrules)
     backend_out = Path("backend/out")
     backend_out.mkdir(parents=True, exist_ok=True)
     
-    # Write target_zips.parquet
+    # Write target_zips.parquet (filtered results)
     output_parquet = backend_out / "target_zips.parquet"
-    typer.echo(f"Writing results to {output_parquet}...")
+    typer.echo(f"Writing filtered results to {output_parquet}...")
     save_parquet(df_filtered, str(output_parquet))
     
-    # Write dated snapshot
+    # Write dated snapshot (filtered)
     date_str = datetime.now().strftime("%Y%m%d")
     snapshot_path = backend_out / f"run_{date_str}.parquet"
     typer.echo(f"Writing snapshot to {snapshot_path}...")
     save_parquet(df_filtered, str(snapshot_path))
     
-    # Write DuckDB
+    # Write DuckDB with ALL processed ZIPs (before hard filters) so API can filter dynamically
     db_path = backend_out / "zipfinder.duckdb"
-    typer.echo(f"Writing DuckDB to {db_path}...")
-    write_duckdb(df_filtered, str(db_path), "zipview")
+    typer.echo(f"Writing ALL ZIPs to DuckDB at {db_path} (API will apply filters dynamically)...")
+    write_duckdb(df, str(db_path), "zipview")  # Use df (all ZIPs) not df_filtered
     
     typer.echo(f"\n✅ Analysis complete! Found {len(df_filtered)} target ZIPs.")
 

@@ -6,6 +6,23 @@ import re
 
 from backend.utils import save_parquet
 
+# State name to code mapping
+STATE_NAME_TO_CODE = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+    "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+    "DISTRICT OF COLUMBIA": "DC", "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI",
+    "IDAHO": "ID", "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA",
+    "KANSAS": "KS", "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME",
+    "MARYLAND": "MD", "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN",
+    "MISSISSIPPI": "MS", "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE",
+    "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM",
+    "NEW YORK": "NY", "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH",
+    "OKLAHOMA": "OK", "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI",
+    "SOUTH CAROLINA": "SC", "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX",
+    "UTAH": "UT", "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY"
+}
+
 
 def _parse_county_name(county: str) -> str:
     """Normalize county name (remove 'County' suffix, title case)."""
@@ -63,9 +80,13 @@ def fetch(force: bool = False, raw_csv_path: str = "backend/raw/county_property_
     if "county_name" in df.columns:
         df["county_name"] = df["county_name"].apply(_parse_county_name)
     
-    # Normalize state codes
+    # Normalize state codes - convert full state names to 2-letter codes
     if "state" in df.columns:
         df["state"] = df["state"].astype(str).str.strip().str.upper()
+        # Convert full state names to codes (e.g., "ALABAMA" -> "AL")
+        df["state"] = df["state"].map(STATE_NAME_TO_CODE).fillna(df["state"])
+        # If already a 2-letter code, keep it; otherwise try to match
+        # This handles cases where the CSV might already have codes
     
     # For now, county_fips will be empty - we'll need a crosswalk
     # The join in run() will use county_name + state to match

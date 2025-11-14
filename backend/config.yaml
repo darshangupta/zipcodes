@@ -2,6 +2,15 @@ states_allowlist:
   - IN
   - OH
   - GA
+  - TX
+  - FL
+  - NC
+  - TN
+  - SC
+  - AL
+  - KY
+  - MS
+  - AR
 
 cap_threshold: 0.075
 min_dscr: 1.2
